@@ -29,15 +29,14 @@
         }
         .shake-screen { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
         
-        /* 상단 HUD 바 - 모바일 레이아웃 개선 */
+        /* 상단 HUD 바 */
         .hud-bar {
             height: 100px;
             background: #1c1917;
             display: flex;
             align-items: center;
-            justify-content: center; /* 기본 중앙 정렬 */
-            gap: 12px; /* 모바일 간격 좁힘 */
-            padding-right: 70px; /* 모바일에서 종료 버튼 공간 확보를 위해 오른쪽 패딩 추가 (중심 이동) */
+            justify-content: center;
+            gap: 20px;
             pointer-events: auto;
             border-bottom: 6px solid #44403c;
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
@@ -45,12 +44,7 @@
             position: relative;
             flex-shrink: 0;
         }
-        @media (min-width: 768px) { 
-            .hud-bar { 
-                gap: 40px; 
-                padding-right: 0; /* PC에서는 패딩 제거 (중앙 정렬 유지) */
-            } 
-        }
+        @media (min-width: 768px) { .hud-bar { gap: 40px; } }
 
         #game-arena {
             position: absolute;
@@ -69,28 +63,16 @@
         }
 
         .hud-item { display: flex; flex-direction: column; align-items: center; }
-        
-        .hud-label { 
-            font-size: 0.7rem; /* 모바일 라벨 크기 축소 */
-            color: #d6d3d1; 
-            text-transform: uppercase; 
-            letter-spacing: 0.05em; 
-            margin-bottom: 2px; 
-        }
+        .hud-label { font-size: 0.8rem; color: #d6d3d1; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px; }
         @media (min-width: 768px) { .hud-label { font-size: 1rem; } }
-        
-        .hud-value { 
-            font-family: 'Jua', sans-serif; 
-            font-size: 1.3rem; /* 모바일 숫자 크기 축소 */
-            line-height: 1; 
-        }
+        .hud-value { font-family: 'Jua', sans-serif; font-size: 1.5rem; line-height: 1; }
         @media (min-width: 768px) { .hud-value { font-size: 2rem; } }
 
         #timer {
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
             font-variant-numeric: tabular-nums;
             letter-spacing: -1px;
-            min-width: 70px; /* 모바일 최소 너비 축소 */
+            min-width: 80px;
             text-align: center;
         }
         @media (min-width: 768px) { #timer { min-width: 120px; } }
@@ -107,6 +89,14 @@
             will-change: transform;
             filter: drop-shadow(0 6px 4px rgba(0,0,0,0.4));
             transition: opacity 0.3s, transform 0.1s;
+        }
+
+        /* 보너스 라운드용 거대 몬스터 */
+        .giant-monster {
+            width: 200px !important;
+            height: 200px !important;
+            z-index: 9999;
+            filter: drop-shadow(0 10px 10px rgba(0,0,0,0.6));
         }
 
         .bush-obstacle {
@@ -240,6 +230,7 @@
         }
         .benefit-card:hover { transform: translateY(-5px); filter: brightness(1.05); }
         .benefit-card:active { transform: scale(0.95); }
+        .benefit-card.selected { border-color: #22c55e; background: #dcfce7; opacity: 0.5; pointer-events: none; }
         
         .rarity-normal { border-color: #9ca3af; box-shadow: 0 4px 0 #6b7280; }
         .rarity-normal .card-title { color: #4b5563; }
@@ -289,6 +280,13 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
 
+        /* Bonus Layer */
+        #bonus-layer {
+            position: fixed; inset: 0; z-index: 150;
+            display: none; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.3);
+        }
+
     </style>
 </head>
 <body>
@@ -300,18 +298,15 @@
         </div>
         <div class="hud-item">
             <span class="hud-label">TARGET</span>
-            <!-- 모바일 텍스트 크기 및 패딩 축소 -->
             <div class="hud-value text-white bg-stone-800 px-3 py-1 md:px-4 md:py-1 rounded-xl border-2 border-stone-600">
                 <span id="current-target">1</span>
                 <span class="text-base md:text-xl text-stone-500 font-normal">/ <span id="total-monsters-display">10</span></span>
             </div>
         </div>
-        <!-- 시간 아이템 여백 축소 -->
         <div class="hud-item ml-2 md:ml-10">
             <span class="hud-label">TIME</span>
             <span class="hud-value text-green-400" id="timer">0.000</span>
         </div>
-        <!-- 종료 버튼: 모바일에서 작게 표시하고 오른쪽 정렬 -->
         <button id="reset-button" class="absolute right-2 md:right-8 bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 text-sm md:px-4 md:py-3 md:text-xl rounded-2xl border-b-4 border-red-800 transition-all active:border-b-0 active:translate-y-1 font-bold">
             ❌ 종료
         </button>
@@ -323,6 +318,7 @@
     </div>
 
     <div id="game-arena"></div>
+    <div id="bonus-layer"></div>
 
     <div id="start-screen">
         <div class="start-panel">
@@ -353,9 +349,10 @@
         // 게임 밸런스 상수
         const SPEED_MIN_BASE = 0.3;
         const SPEED_MAX_BASE = 0.8;
-        const DEFAULT_TIMEOUT_LIMIT = 30.0; // 30초로 변경
+        const DEFAULT_TIMEOUT_LIMIT = 30.0; // 30초
 
         const gameArena = document.getElementById('game-arena');
+        const bonusLayer = document.getElementById('bonus-layer');
         const currentTargetDisplay = document.getElementById('current-target');
         const totalMonstersDisplay = document.getElementById('total-monsters-display');
         const stageDisplay = document.getElementById('stage-display');
@@ -378,7 +375,8 @@
         let activeBenefits = {
             initialKill: 0,
             slowPercent: 0,
-            timeExtension: 0
+            timeExtension: 0,
+            bushRemoval: 0
         };
 
         let app, db, auth;
@@ -391,7 +389,8 @@
         const BENEFIT_TYPES = {
             KILL: 'kill',
             SLOW: 'slow',
-            TIME: 'time'
+            TIME: 'time',
+            REMOVE_BUSH: 'remove_bush'
         };
 
         function getMonsterHTML(type, color, darkColor) {
@@ -431,18 +430,29 @@
 
         function getStageConfig(stage) {
             let config = { count: 10, speedBonus: 0, bushCount: 0 };
+            
             if (stage === 1) { config.count = 10; config.speedBonus = 0; config.bushCount = 0; }
             else if (stage === 2) { config.count = 10; config.speedBonus = 0.3; config.bushCount = 0; }
-            else if (stage === 3) { config.count = 15; config.speedBonus = 0.3; config.bushCount = 3; }
-            else if (stage === 4) { config.count = 20; config.speedBonus = 0.6; config.bushCount = 3; }
-            else if (stage === 5) { config.count = 25; config.speedBonus = 0.6; config.bushCount = 4; }
-            else if (stage === 6) { config.count = 30; config.speedBonus = 0.6; config.bushCount = 4; }
-            else if (stage === 7) { config.count = 30; config.speedBonus = 0.7; config.bushCount = 4; }
-            else if (stage === 8) { config.count = 35; config.speedBonus = 0.7; config.bushCount = 5; }
+            // 3단계: 풀숲 3->1개로 감소
+            else if (stage === 3) { config.count = 15; config.speedBonus = 0.3; config.bushCount = 1; }
+            // 4단계: 풀숲 3->1개로 감소
+            else if (stage === 4) { config.count = 20; config.speedBonus = 0.6; config.bushCount = 1; }
+            // 5단계: 풀숲 4->2개로 감소
+            else if (stage === 5) { config.count = 25; config.speedBonus = 0.6; config.bushCount = 2; }
+            // 6단계: 풀숲 4->2개로 감소
+            else if (stage === 6) { config.count = 30; config.speedBonus = 0.6; config.bushCount = 2; }
+            // 7단계: 풀숲 4->2개로 감소
+            else if (stage === 7) { config.count = 30; config.speedBonus = 0.7; config.bushCount = 2; }
+            // 8단계: 풀숲 5->3개로 감소
+            else if (stage === 8) { config.count = 35; config.speedBonus = 0.7; config.bushCount = 3; }
+            // 9단계: 몬스터 5명 추가, 풀숲 3개 (5-2)
+            else if (stage === 9) { config.count = 40; config.speedBonus = 0.7; config.bushCount = 3; }
+            // 10단계: 풀숲 1개 추가 -> 4개 (6-2)
+            else if (stage === 10) { config.count = 40; config.speedBonus = 0.7; config.bushCount = 4; }
             else {
-                config.count = 35 + (stage - 8) * 5;
-                config.speedBonus = 0.8 + (stage - 8) * 0.1;
-                config.bushCount = 5 + Math.floor((stage - 8) / 2);
+                config.count = 40 + (stage - 10) * 5;
+                config.speedBonus = 0.8 + (stage - 10) * 0.1;
+                config.bushCount = 4 + Math.floor((stage - 10) / 2);
             }
             return config;
         }
@@ -455,7 +465,7 @@
             
             let info = `🌱 Stage ${stage}: ${config.count}마리`;
             if(config.speedBonus > 0) info += ` (속도 UP!)`;
-            if(config.bushCount > 0) info += ` (풀숲 주의!)`;
+            if(config.bushCount > 0) info += ` (풀숲 ${config.bushCount}개)`;
             if(stageInfoText) stageInfoText.textContent = info;
         }
 
@@ -464,17 +474,16 @@
             clearInterval(timerInterval);
             if (animId) { cancelAnimationFrame(animId); animId = null; }
             
-            const existingModal = document.getElementById('clear-modal');
-            if (existingModal) existingModal.remove();
-            
-            const existingTimeOutModal = document.querySelector('.fixed.z-\\[200\\]');
-            if (existingTimeOutModal && !existingTimeOutModal.id) existingTimeOutModal.remove();
+            // 모든 모달 닫기
+            document.querySelectorAll('.fixed.z-\\[200\\]').forEach(el => el.remove());
+            bonusLayer.style.display = 'none';
+            bonusLayer.innerHTML = '';
 
             startScreen.style.display = 'flex';
             timerDisplay.textContent = '0.000';
             
             // Reset Benefits
-            activeBenefits = { initialKill: 0, slowPercent: 0, timeExtension: 0 };
+            activeBenefits = { initialKill: 0, slowPercent: 0, timeExtension: 0, bushRemoval: 0 };
             updateActiveBenefitsUI();
 
             loadStageConfig(1);
@@ -484,9 +493,10 @@
         }
 
         function createBushes(count) {
+            const finalCount = Math.max(0, count - activeBenefits.bushRemoval);
             const w = gameArena.clientWidth;
             const h = gameArena.clientHeight;
-            for(let i=0; i<count; i++) {
+            for(let i=0; i<finalCount; i++) {
                 const bush = document.createElement('div');
                 bush.className = 'bush-obstacle';
                 bush.innerHTML = getBushHTML();
@@ -517,10 +527,9 @@
                 const startY = Math.random() * (h - 70);
                 const angle = Math.random() * Math.PI * 2;
                 
-                // Speed calculation with Benefit (Slow)
                 let baseSpeed = SPEED_MIN_BASE + Math.random() * (SPEED_MAX_BASE - SPEED_MIN_BASE);
                 let speed = (baseSpeed + config.speedBonus) * (1 - (activeBenefits.slowPercent / 100));
-                if (speed < 0.1) speed = 0.1; // Min speed cap
+                if (speed < 0.1) speed = 0.1;
 
                 el.innerHTML = `${getMonsterHTML(type, colorSet.main, colorSet.dark)}<div class="number-badge">${i}</div>`;
                 el.style.transform = `translate(${startX}px, ${startY}px)`;
@@ -528,11 +537,9 @@
                 el.ontouchstart = handleClick;
                 gameArena.appendChild(el);
 
-                // Check for Auto Kill Benefit
                 const isDeadStart = i <= activeBenefits.initialKill;
                 if (isDeadStart) {
                     el.classList.add('dead');
-                    // Visually hide or mark
                     el.style.opacity = '0.3';
                     el.style.pointerEvents = 'none';
                 }
@@ -544,12 +551,10 @@
                 });
             }
 
-            // Adjust current target if monsters are auto-killed
             if (activeBenefits.initialKill > 0) {
                 currentTarget = 1 + activeBenefits.initialKill;
-                // If auto-kill clears stage immediately (rare but possible)
                 if (currentTarget > totalMonstersInStage) {
-                    setTimeout(handleStageClear, 500); // Delay slightly
+                    setTimeout(handleStageClear, 500);
                 }
             }
             updateStatusDisplay();
@@ -640,36 +645,182 @@
             }
         }
 
-        // --- Benefit Logic ---
-        function generateBenefits() {
-            const options = [];
-            for (let i = 0; i < 3; i++) {
-                const randType = Math.random();
-                let type, rarity, value, title, desc, icon, cssClass;
+        // --- Benefit & Bonus Round Logic ---
+        
+        function startBonusRound(limitTime) {
+            bonusLayer.innerHTML = '';
+            bonusLayer.style.display = 'flex';
+            
+            // 안내 문구
+            const intro = document.createElement('div');
+            intro.className = 'start-panel';
+            intro.innerHTML = `
+                <h2 class="text-4xl font-black text-red-500 mb-2">⚠️ WARNING!</h2>
+                <p class="text-stone-600 mb-4 font-bold text-lg">거대 몬스터 출현!</p>
+                <p class="text-green-600 text-sm mb-6">나타나는 순간 ${limitTime}초 안에 클릭하세요!</p>
+                <button id="bonus-ready-btn" class="start-btn text-xl">READY</button>
+            `;
+            bonusLayer.appendChild(intro);
 
-                if (randType < 0.33) type = BENEFIT_TYPES.KILL;
-                else if (randType < 0.66) type = BENEFIT_TYPES.SLOW;
-                else type = BENEFIT_TYPES.TIME;
+            document.getElementById('bonus-ready-btn').onclick = () => {
+                intro.remove();
+                
+                // 랜덤 대기 후 몬스터 출현
+                const waitTime = 1000 + Math.random() * 2000;
+                setTimeout(() => {
+                    spawnGiantMonster(limitTime);
+                }, waitTime);
+            };
+        }
 
-                const randRarity = Math.random();
-                if (type === BENEFIT_TYPES.KILL) {
-                    if (randRarity < 0.7) { rarity = 'normal'; value = 1; cssClass = 'rarity-normal'; }
-                    else if (randRarity < 0.9) { rarity = 'rare'; value = 2; cssClass = 'rarity-rare'; }
-                    else { rarity = 'legend'; value = 3; cssClass = 'rarity-legend'; }
-                    title = "시작 킬"; desc = `시작 시 몬스터 ${value}마리 자동 처치`; icon = "⚔️";
-                } else if (type === BENEFIT_TYPES.SLOW) {
-                    if (randRarity < 0.8) { rarity = 'normal'; value = 10; cssClass = 'rarity-normal'; }
-                    else if (randRarity < 0.95) { rarity = 'rare'; value = 20; cssClass = 'rarity-rare'; }
-                    else { rarity = 'legend'; value = 30; cssClass = 'rarity-legend'; }
-                    title = "속도 감소"; desc = `모든 몬스터 속도 ${value}% 감소`; icon = "🐌";
+        function spawnGiantMonster(limitTime) {
+            const monster = document.createElement('div');
+            monster.className = 'monster-entity giant-monster';
+            monster.innerHTML = getMonsterHTML('slime', '#ff0000', '#990000');
+            
+            // 랜덤 위치
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            const x = Math.random() * (w - 250) + 25;
+            const y = Math.random() * (h - 250) + 125;
+            monster.style.left = `${x}px`;
+            monster.style.top = `${y}px`;
+            
+            bonusLayer.appendChild(monster);
+            
+            const spawnTime = performance.now();
+            
+            monster.onmousedown = monster.ontouchstart = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const clickTime = performance.now();
+                const duration = (clickTime - spawnTime) / 1000;
+                
+                monster.remove();
+                
+                if (duration <= limitTime) {
+                    // 성공: 베네핏 2개
+                    showBonusResult(true, duration, 2);
                 } else {
-                    if (randRarity < 0.8) { rarity = 'normal'; value = 5; cssClass = 'rarity-normal'; }
-                    else if (randRarity < 0.95) { rarity = 'rare'; value = 10; cssClass = 'rarity-rare'; }
-                    else { rarity = 'legend'; value = 15; cssClass = 'rarity-legend'; }
-                    title = "시간 연장"; desc = `제한 시간 ${value}초 증가`; icon = "⏳";
+                    // 실패: 베네핏 1개
+                    showBonusResult(false, duration, 1);
                 }
-                options.push({ type, rarity, value, title, desc, icon, cssClass });
+            };
+        }
+
+        function showBonusResult(success, time, picks) {
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'start-panel';
+            resultDiv.style.zIndex = 200;
+            
+            const title = success ? "SUCCESS! 🎉" : "TOO SLOW... 🐢";
+            const color = success ? "text-green-500" : "text-stone-500";
+            
+            resultDiv.innerHTML = `
+                <h2 class="text-4xl font-black ${color} mb-2">${title}</h2>
+                <p class="text-stone-600 mb-2 font-bold">반응 속도: ${time.toFixed(3)}초</p>
+                <p class="text-stone-500 mb-6 text-sm">보상: 베네핏 ${picks}개 선택 가능</p>
+                <button id="bonus-ok-btn" class="start-btn text-xl">확인</button>
+            `;
+            bonusLayer.appendChild(resultDiv);
+            
+            document.getElementById('bonus-ok-btn').onclick = () => {
+                bonusLayer.innerHTML = '';
+                bonusLayer.style.display = 'none';
+                showBenefitModal(picks);
+            };
+        }
+
+        function showBenefitModal(pickCount) {
+            const benefits = generateBenefits();
+            let picksLeft = pickCount;
+
+            const modal = document.createElement('div');
+            modal.id = 'clear-modal';
+            modal.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur pointer-events-auto';
+            
+            const updateUI = () => {
+                let cardsHtml = benefits.map((b, index) => `
+                    <div class="benefit-card ${b.cssClass} ${b.picked ? 'selected' : ''}" data-index="${index}">
+                        <div class="card-icon">${b.icon}</div>
+                        <div class="card-title">${b.title}</div>
+                        <div class="card-desc">${b.desc}</div>
+                    </div>
+                `).join('');
+
+                modal.innerHTML = `
+                    <div class="start-panel" style="max-width: 600px;">
+                        <div class="text-6xl mb-2">🎉</div>
+                        <h2 class="text-3xl font-black text-white mb-2">STAGE ${currentStage} CLEAR!</h2>
+                        <p class="text-yellow-300 font-bold mb-2 text-xl">보상을 ${picksLeft}개 선택하세요!</p>
+                        <div class="benefit-container">${cardsHtml}</div>
+                    </div>
+                `;
+                
+                modal.querySelectorAll('.benefit-card').forEach(card => {
+                    if(!card.classList.contains('selected')) {
+                        card.onclick = () => {
+                            const idx = card.dataset.index;
+                            applyBenefit(benefits[idx]);
+                            benefits[idx].picked = true;
+                            picksLeft--;
+                            
+                            if (picksLeft <= 0) {
+                                modal.remove();
+                                loadStageConfig(currentStage + 1);
+                                updateStatusDisplay();
+                                startGame();
+                            } else {
+                                updateUI(); // Re-render for next pick
+                            }
+                        };
+                    }
+                });
+            };
+            
+            document.body.appendChild(modal);
+            updateUI();
+        }
+
+        function generateBenefits() {
+            const nextStageConfig = getStageConfig(currentStage + 1);
+            let availableTypes = [BENEFIT_TYPES.KILL, BENEFIT_TYPES.SLOW, BENEFIT_TYPES.TIME];
+            if (nextStageConfig.bushCount > 0) availableTypes.push(BENEFIT_TYPES.REMOVE_BUSH);
+
+            for (let i = availableTypes.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [availableTypes[i], availableTypes[j]] = [availableTypes[j], availableTypes[i]];
             }
+
+            const selectedTypes = availableTypes.slice(0, 3);
+            const options = [];
+
+            selectedTypes.forEach(type => {
+                let rarity, value, title, desc, icon, cssClass;
+                if (type === BENEFIT_TYPES.REMOVE_BUSH) {
+                    rarity = 'rare'; value = 1; cssClass = 'rarity-rare'; title = "제초 작업"; desc = "다음부터 풀숲 1개 제거"; icon = "✂️";
+                } else {
+                    const randRarity = Math.random();
+                    if (type === BENEFIT_TYPES.KILL) {
+                        if (randRarity < 0.7) { rarity = 'normal'; value = 1; cssClass = 'rarity-normal'; }
+                        else if (randRarity < 0.9) { rarity = 'rare'; value = 2; cssClass = 'rarity-rare'; }
+                        else { rarity = 'legend'; value = 3; cssClass = 'rarity-legend'; }
+                        title = "시작 킬"; desc = `시작 시 몬스터 ${value}마리 자동 처치`; icon = "⚔️";
+                    } else if (type === BENEFIT_TYPES.SLOW) {
+                        if (randRarity < 0.8) { rarity = 'normal'; value = 10; cssClass = 'rarity-normal'; }
+                        else if (randRarity < 0.95) { rarity = 'rare'; value = 20; cssClass = 'rarity-rare'; }
+                        else { rarity = 'legend'; value = 30; cssClass = 'rarity-legend'; }
+                        title = "속도 감소"; desc = `모든 몬스터 속도 ${value}% 감소`; icon = "🐌";
+                    } else if (type === BENEFIT_TYPES.TIME) {
+                        if (randRarity < 0.8) { rarity = 'normal'; value = 5; cssClass = 'rarity-normal'; }
+                        else if (randRarity < 0.95) { rarity = 'rare'; value = 10; cssClass = 'rarity-rare'; }
+                        else { rarity = 'legend'; value = 15; cssClass = 'rarity-legend'; }
+                        title = "시간 연장"; desc = `제한 시간 ${value}초 증가`; icon = "⏳";
+                    }
+                }
+                options.push({ type, rarity, value, title, desc, icon, cssClass, picked: false });
+            });
             return options;
         }
 
@@ -677,20 +828,16 @@
             if (benefit.type === BENEFIT_TYPES.KILL) activeBenefits.initialKill += benefit.value;
             if (benefit.type === BENEFIT_TYPES.SLOW) activeBenefits.slowPercent += benefit.value;
             if (benefit.type === BENEFIT_TYPES.TIME) activeBenefits.timeExtension += benefit.value;
+            if (benefit.type === BENEFIT_TYPES.REMOVE_BUSH) activeBenefits.bushRemoval += benefit.value;
             updateActiveBenefitsUI();
         }
 
         function updateActiveBenefitsUI() {
             activeBenefitsEl.innerHTML = '';
-            if (activeBenefits.initialKill > 0) {
-                activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>⚔️</span><span>시작킬 +${activeBenefits.initialKill}</span></div>`;
-            }
-            if (activeBenefits.slowPercent > 0) {
-                activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>🐌</span><span>속도 -${activeBenefits.slowPercent}%</span></div>`;
-            }
-            if (activeBenefits.timeExtension > 0) {
-                activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>⏳</span><span>시간 +${activeBenefits.timeExtension}초</span></div>`;
-            }
+            if (activeBenefits.initialKill > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>⚔️</span><span>시작킬 +${activeBenefits.initialKill}</span></div>`;
+            if (activeBenefits.slowPercent > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>🐌</span><span>속도 -${activeBenefits.slowPercent}%</span></div>`;
+            if (activeBenefits.timeExtension > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>⏳</span><span>시간 +${activeBenefits.timeExtension}초</span></div>`;
+            if (activeBenefits.bushRemoval > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>✂️</span><span>풀숲제거 -${activeBenefits.bushRemoval}</span></div>`;
         }
 
         async function handleStageClear() {
@@ -701,42 +848,22 @@
             const score = timerDisplay.textContent;
             if(db) await addDoc(collection(db, COLLECTION_PATH), { stage: currentStage, time: parseFloat(score), timestamp: serverTimestamp() });
 
-            const benefits = generateBenefits();
+            // 보너스 라운드 체크 (반응속도 0.2초씩 완화)
+            if (currentStage === 3) {
+                startBonusRound(0.6); // 0.4 -> 0.6s
+                return;
+            }
+            if (currentStage === 5) {
+                startBonusRound(0.5); // 0.3 -> 0.5s
+                return;
+            }
+            if (currentStage === 8) {
+                startBonusRound(0.48); // 0.28 -> 0.48s
+                return;
+            }
 
-            const modal = document.createElement('div');
-            modal.id = 'clear-modal';
-            modal.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur pointer-events-auto';
-            
-            let cardsHtml = benefits.map((b, index) => `
-                <div class="benefit-card ${b.cssClass}" data-index="${index}">
-                    <div class="card-icon">${b.icon}</div>
-                    <div class="card-title">${b.title}</div>
-                    <div class="card-desc">${b.desc}</div>
-                </div>
-            `).join('');
-
-            modal.innerHTML = `
-                <div class="start-panel" style="max-width: 600px;">
-                    <div class="text-6xl mb-2">🎉</div>
-                    <h2 class="text-3xl font-black text-white mb-2">STAGE ${currentStage} CLEAR!</h2>
-                    <p class="text-stone-300 mb-4 font-bold">기록: <span class="text-green-400 font-mono">${score}s</span></p>
-                    <p class="text-yellow-300 font-bold mb-2">보상을 선택하세요!</p>
-                    <div class="benefit-container">${cardsHtml}</div>
-                </div>
-            `;
-            document.body.appendChild(modal);
-
-            modal.querySelectorAll('.benefit-card').forEach(card => {
-                card.onclick = () => {
-                    const idx = card.dataset.index;
-                    applyBenefit(benefits[idx]);
-                    modal.remove();
-                    
-                    loadStageConfig(currentStage + 1);
-                    updateStatusDisplay();
-                    startGame();
-                };
-            });
+            // 일반 스테이지 클리어
+            showBenefitModal(1);
         }
 
         function setupLeaderboard() {
