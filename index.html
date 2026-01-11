@@ -29,7 +29,7 @@
         }
         .shake-screen { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
         
-        /* 불빛 힌트 애니메이션 (위치 이동 간섭 제거) */
+        /* 불빛 힌트 애니메이션 */
         @keyframes hint-pulse {
             0% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.7); }
             70% { box-shadow: 0 0 0 20px rgba(255, 215, 0, 0); }
@@ -38,7 +38,7 @@
         .hint-active {
             animation: hint-pulse 1s infinite;
             z-index: 9999 !important;
-            filter: brightness(1.5) drop-shadow(0 0 10px gold) !important;
+            filter: brightness(1.5) !important;
         }
 
         /* 상단 HUD 바 */
@@ -81,15 +81,11 @@
             background-color: #795548;
             border: 2px solid #3e2723;
             z-index: 50;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
         .fence-horizontal {
             top: 50%; left: 0; width: 100%; height: 16px;
             transform: translateY(-50%);
-        }
-        .fence-vertical {
-            top: 0; left: 50%; width: 16px; height: 100%;
-            transform: translateX(-50%);
         }
 
         .hud-item { display: flex; flex-direction: column; align-items: center; }
@@ -113,15 +109,19 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            width: 64px;
-            height: 64px;
+            width: 48px; /* 모바일: 48px (25% 축소) */
+            height: 48px;
             cursor: pointer;
             will-change: transform;
-            filter: drop-shadow(0 6px 4px rgba(0,0,0,0.4));
-            transition: opacity 0.3s, transform 0.1s;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        @media (min-width: 768px) {
+            .monster-entity {
+                width: 64px; /* PC: 64px */
+                height: 64px;
+            }
         }
 
-        /* 보너스 라운드용 거대 몬스터 */
         .giant-monster {
             width: 200px !important;
             height: 200px !important;
@@ -135,7 +135,7 @@
             height: 100px;
             pointer-events: none;
             z-index: 9990;
-            filter: drop-shadow(0 10px 10px rgba(0,0,0,0.3));
+            filter: drop-shadow(0 5px 5px rgba(0,0,0,0.2));
             display: flex;
             justify-content: center;
             align-items: flex-end;
@@ -156,7 +156,7 @@
             background-repeat: no-repeat;
             border: 6px solid #ffffff; border-radius: 24px;
             box-shadow: 0 20px 50px rgba(0,0,0,0.5), 0 0 0 10px rgba(0,0,0,0.1);
-            padding: 30px 20px; max-width: 500px; width: 100%;
+            padding: 30px 20px; max-width: 600px; width: 100%;
             max-height: 85dvh; overflow-y: auto;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             position: relative;
@@ -241,6 +241,9 @@
                 grid-template-columns: 1fr;
                 gap: 8px;
             }
+            .benefit-container.many-items {
+                grid-template-columns: repeat(2, 1fr);
+            }
         }
         
         .benefit-card {
@@ -254,7 +257,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-height: 140px;
+            min-height: 120px;
             position: relative;
             overflow: hidden;
         }
@@ -281,11 +284,11 @@
             border-bottom-left-radius: 8px; font-weight: bold;
         }
 
-        .card-icon { font-size: 2rem; margin-bottom: 5px; }
-        .card-title { font-weight: 900; font-size: 1rem; margin-bottom: 4px; line-height: 1.1; }
-        .card-desc { font-size: 0.8rem; color: #6b7280; line-height: 1.2; word-break: keep-all; }
+        .card-icon { font-size: 1.8rem; margin-bottom: 4px; }
+        .card-title { font-weight: 900; font-size: 0.95rem; margin-bottom: 4px; line-height: 1.1; }
+        .card-desc { font-size: 0.75rem; color: #6b7280; line-height: 1.2; word-break: keep-all; }
 
-        /* Active Benefits HUD - 왼쪽 상단 */
+        /* Active Benefits HUD */
         #active-benefits {
             position: fixed;
             top: 110px;
@@ -402,7 +405,7 @@
         let timerInterval = null;
         let animId = null;
         let monsters = [];
-        let hintTimer = null; // 힌트 타이머
+        let hintTimer = null; 
 
         // Benefit State
         let activeBenefits = {
@@ -411,7 +414,8 @@
             timeExtension: 0,
             bushRemoval: 0,
             fenceLevel: 0,
-            lightLevel: 0
+            lightLevel: 0,
+            extraOptions: 0 
         };
 
         let app, db, auth;
@@ -420,14 +424,14 @@
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         const COLLECTION_PATH = `/artifacts/${appId}/public/data/leaderboard_cute_stage`;
 
-        // Benefit Definitions
         const BENEFIT_TYPES = {
             KILL: 'kill',
             SLOW: 'slow',
             TIME: 'time',
             REMOVE_BUSH: 'remove_bush',
             FENCE: 'fence',
-            LIGHT: 'light'
+            LIGHT: 'light',
+            EXTRA_OPTION: 'extra_option'
         };
 
         function getMonsterHTML(type, color, darkColor) {
@@ -462,6 +466,11 @@
             loadStageConfig(1);
             updateStatusDisplay();
             updateActiveBenefitsUI();
+        }
+
+        // 몬스터 크기 동적 계산 (모바일 대응)
+        function getMonsterSize() {
+            return window.innerWidth < 768 ? 48 : 64;
         }
 
         function getStageConfig(stage) {
@@ -510,7 +519,7 @@
             startScreen.style.display = 'flex';
             timerDisplay.textContent = '0.000';
             
-            activeBenefits = { initialKill: 0, slowPercent: 0, timeExtension: 0, bushRemoval: 0, fenceLevel: 0, lightLevel: 0 };
+            activeBenefits = { initialKill: 0, slowPercent: 0, timeExtension: 0, bushRemoval: 0, fenceLevel: 0, lightLevel: 0, extraOptions: 0 };
             updateActiveBenefitsUI();
 
             loadStageConfig(1);
@@ -539,21 +548,17 @@
             gameArena.innerHTML = '';
             monsters = [];
             
-            // 울타리 생성
+            // 울타리 생성 (1번만)
             if (activeBenefits.fenceLevel >= 1) {
                 const hFence = document.createElement('div');
                 hFence.className = 'fence-line fence-horizontal';
                 gameArena.appendChild(hFence);
             }
-            if (activeBenefits.fenceLevel >= 2) {
-                const vFence = document.createElement('div');
-                vFence.className = 'fence-line fence-vertical';
-                gameArena.appendChild(vFence);
-            }
 
             const w = gameArena.clientWidth;
             const h = gameArena.clientHeight;
             const config = getStageConfig(currentStage);
+            const monsterSize = getMonsterSize();
 
             if (config.bushCount > 0) createBushes(config.bushCount);
 
@@ -564,38 +569,25 @@
                 const type = MONSTER_TYPES[i % 4];
                 const colorSet = COLORS[i % COLORS.length];
                 
-                // 울타리 배치 로직에 따라 구역 설정
                 let bounds = { minX: 0, maxX: w, minY: 0, maxY: h };
 
-                if (activeBenefits.fenceLevel === 1) {
-                    // 가로 2분할
+                if (activeBenefits.fenceLevel >= 1) {
                     if (i <= config.count / 2) {
-                        bounds.maxY = h / 2; // 위쪽
+                        bounds.maxY = h / 2;
                     } else {
-                        bounds.minY = h / 2; // 아래쪽
-                    }
-                } else if (activeBenefits.fenceLevel === 2) {
-                    // 4분할
-                    const q = Math.ceil(config.count / 4);
-                    if (i <= q) { // 좌상
-                        bounds.maxX = w / 2;
-                        bounds.maxY = h / 2;
-                    } else if (i <= q*2) { // 우상
-                        bounds.minX = w / 2;
-                        bounds.maxY = h / 2;
-                    } else if (i <= q*3) { // 좌하
-                        bounds.maxX = w / 2;
-                        bounds.minY = h / 2;
-                    } else { // 우하
-                        bounds.minX = w / 2;
                         bounds.minY = h / 2;
                     }
                 }
 
-                // 초기 위치 설정 (구역 내 랜덤)
-                // 몬스터 크기(64px) 고려하여 경계 안쪽에 생성
-                const startX = bounds.minX + Math.random() * (bounds.maxX - bounds.minX - 70);
-                const startY = bounds.minY + Math.random() * (bounds.maxY - bounds.minY - 70);
+                const padding = 10;
+                // 몬스터 크기를 동적으로 반영하여 좌표 계산
+                const safeMaxX = bounds.maxX - monsterSize - padding;
+                const safeMaxY = bounds.maxY - monsterSize - padding;
+                const safeMinX = bounds.minX + padding;
+                const safeMinY = bounds.minY + padding;
+
+                const startX = safeMinX + Math.random() * (safeMaxX - safeMinX);
+                const startY = safeMinY + Math.random() * (safeMaxY - safeMinY);
 
                 const angle = Math.random() * Math.PI * 2;
                 
@@ -621,7 +613,7 @@
                     vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, 
                     dead: isDeadStart,
                     id: i,
-                    bounds: bounds // 이동 제한을 위해 bounds 저장
+                    bounds: bounds
                 });
             }
 
@@ -632,17 +624,15 @@
                 }
             }
             updateStatusDisplay();
-            resetHintTimer(); // 시작 시 힌트 타이머 가동
+            resetHintTimer(); 
         }
 
         // --- Hint Logic ---
         function resetHintTimer() {
             if (hintTimer) clearTimeout(hintTimer);
             
-            // 기존 힌트 제거
             document.querySelectorAll('.hint-active').forEach(el => el.classList.remove('hint-active'));
 
-            // 게임이 실행 중이고, 불빛 레벨이 있을 때만 작동
             if (activeBenefits.lightLevel > 0 && isGameRunning) {
                 let delay = 2000;
                 if (activeBenefits.lightLevel === 2) delay = 1500;
@@ -706,18 +696,20 @@
             if(isGameRunning) {
                 const w = gameArena.clientWidth;
                 const h = gameArena.clientHeight;
+                const monsterSize = getMonsterSize();
+
                 monsters.forEach(m => {
                     if(m.dead) return;
                     m.x += m.vx; m.y += m.vy;
                     
-                    // 구역 경계(bounds) 내에서만 이동하도록 제한 (64px는 몬스터 크기)
-                    if(m.x <= m.bounds.minX || m.x >= m.bounds.maxX - 64) {
+                    // 동적 크기 반영한 경계 체크
+                    if(m.x <= m.bounds.minX || m.x >= m.bounds.maxX - monsterSize) {
                         m.vx *= -1;
-                        m.x = Math.max(m.bounds.minX, Math.min(m.x, m.bounds.maxX - 64));
+                        m.x = Math.max(m.bounds.minX, Math.min(m.x, m.bounds.maxX - monsterSize));
                     }
-                    if(m.y <= m.bounds.minY || m.y >= m.bounds.maxY - 64) {
+                    if(m.y <= m.bounds.minY || m.y >= m.bounds.maxY - monsterSize) {
                         m.vy *= -1;
-                        m.y = Math.max(m.bounds.minY, Math.min(m.y, m.bounds.maxY - 64));
+                        m.y = Math.max(m.bounds.minY, Math.min(m.y, m.bounds.maxY - monsterSize));
                     }
                     
                     m.el.style.transform = `translate(${m.x}px, ${m.y}px)`;
@@ -751,8 +743,6 @@
                 gameArena.classList.remove('shake-screen');
                 void gameArena.offsetWidth;
                 gameArena.classList.add('shake-screen');
-                el.style.filter = 'brightness(2) saturate(2) hue-rotate(90deg)';
-                setTimeout(() => el.style.filter = '', 150);
                 setTimeout(() => gameArena.classList.remove('shake-screen'), 400);
             }
         }
@@ -856,12 +846,14 @@
                     </div>
                 `).join('');
 
+                const containerClass = benefits.length > 3 ? 'benefit-container many-items' : 'benefit-container';
+
                 modal.innerHTML = `
-                    <div class="start-panel" style="max-width: 600px;">
+                    <div class="start-panel" style="max-width: 800px;">
                         <div class="text-6xl mb-2">🎉</div>
                         <h2 class="text-3xl font-black text-white mb-2">STAGE ${currentStage} CLEAR!</h2>
                         <p class="text-yellow-300 font-bold mb-2 text-xl">보상을 ${picksLeft}개 선택하세요!</p>
-                        <div class="benefit-container">${cardsHtml}</div>
+                        <div class="${containerClass}">${cardsHtml}</div>
                     </div>
                 `;
                 
@@ -892,11 +884,11 @@
 
         function generateBenefits() {
             const nextStageConfig = getStageConfig(currentStage + 1);
-            let availableTypes = [BENEFIT_TYPES.KILL, BENEFIT_TYPES.SLOW, BENEFIT_TYPES.TIME];
+            let availableTypes = [BENEFIT_TYPES.KILL, BENEFIT_TYPES.SLOW, BENEFIT_TYPES.TIME, BENEFIT_TYPES.EXTRA_OPTION];
             
             if (currentStage >= 3) {
                 if (nextStageConfig.bushCount > 0) availableTypes.push(BENEFIT_TYPES.REMOVE_BUSH);
-                if (activeBenefits.fenceLevel < 2) availableTypes.push(BENEFIT_TYPES.FENCE);
+                if (activeBenefits.fenceLevel < 1) availableTypes.push(BENEFIT_TYPES.FENCE);
                 if (activeBenefits.lightLevel < 3) availableTypes.push(BENEFIT_TYPES.LIGHT);
             }
 
@@ -905,12 +897,16 @@
                 [availableTypes[i], availableTypes[j]] = [availableTypes[j], availableTypes[i]];
             }
 
-            const selectedTypes = availableTypes.slice(0, 3);
+            const selectionCount = 3 + activeBenefits.extraOptions;
+            const selectedTypes = availableTypes.slice(0, selectionCount);
             const options = [];
 
             selectedTypes.forEach(type => {
                 let rarity, value, title, desc, icon, cssClass;
-                if (type === BENEFIT_TYPES.REMOVE_BUSH) {
+                
+                if (type === BENEFIT_TYPES.EXTRA_OPTION) {
+                    rarity = 'rare'; value = 1; cssClass = 'rarity-rare'; title = "선택지 확장"; desc = "보상 선택지 1개 추가"; icon = "➕";
+                } else if (type === BENEFIT_TYPES.REMOVE_BUSH) {
                     rarity = 'rare'; value = 1; cssClass = 'rarity-rare'; title = "제초 작업"; desc = "다음부터 풀숲 1개 제거"; icon = "✂️";
                 } else if (type === BENEFIT_TYPES.FENCE) {
                     rarity = 'legend'; value = 1; cssClass = 'rarity-legend'; title = "울타리 설치"; desc = "몬스터를 구역별로 정렬"; icon = "🚧";
@@ -931,9 +927,9 @@
                         else { rarity = 'legend'; value = 30; cssClass = 'rarity-legend'; }
                         title = "속도 감소"; desc = `모든 몬스터 속도 ${value}% 감소`; icon = "🐌";
                     } else if (type === BENEFIT_TYPES.TIME) {
-                        if (randRarity < 0.8) { rarity = 'normal'; value = 5; cssClass = 'rarity-normal'; }
-                        else if (randRarity < 0.95) { rarity = 'rare'; value = 10; cssClass = 'rarity-rare'; }
-                        else { rarity = 'legend'; value = 15; cssClass = 'rarity-legend'; }
+                        if (randRarity < 0.8) { rarity = 'normal'; value = 3; cssClass = 'rarity-normal'; }
+                        else if (randRarity < 0.95) { rarity = 'rare'; value = 6; cssClass = 'rarity-rare'; }
+                        else { rarity = 'legend'; value = 9; cssClass = 'rarity-legend'; }
                         title = "시간 연장"; desc = `제한 시간 ${value}초 증가`; icon = "⏳";
                     }
                 }
@@ -949,6 +945,7 @@
             if (benefit.type === BENEFIT_TYPES.REMOVE_BUSH) activeBenefits.bushRemoval += benefit.value;
             if (benefit.type === BENEFIT_TYPES.FENCE) activeBenefits.fenceLevel += 1;
             if (benefit.type === BENEFIT_TYPES.LIGHT) activeBenefits.lightLevel += 1;
+            if (benefit.type === BENEFIT_TYPES.EXTRA_OPTION) activeBenefits.extraOptions += benefit.value;
             updateActiveBenefitsUI();
         }
 
@@ -960,6 +957,7 @@
             if (activeBenefits.bushRemoval > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>✂️</span><span>-${activeBenefits.bushRemoval}</span></div>`;
             if (activeBenefits.fenceLevel > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>🚧</span><span>Lv.${activeBenefits.fenceLevel}</span></div>`;
             if (activeBenefits.lightLevel > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>💡</span><span>Lv.${activeBenefits.lightLevel}</span></div>`;
+            if (activeBenefits.extraOptions > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>➕</span><span>+${activeBenefits.extraOptions}</span></div>`;
         }
 
         async function handleStageClear() {
@@ -972,15 +970,15 @@
             if(db) await addDoc(collection(db, COLLECTION_PATH), { stage: currentStage, time: parseFloat(score), timestamp: serverTimestamp() });
 
             if (currentStage === 3) {
-                startBonusRound(0.6); // 0.4 -> 0.6s
+                startBonusRound(0.5); // 0.6 -> 0.5s
                 return;
             }
             if (currentStage === 5) {
-                startBonusRound(0.5); // 0.3 -> 0.5s
+                startBonusRound(0.4); // 0.5 -> 0.4s
                 return;
             }
             if (currentStage === 8) {
-                startBonusRound(0.48); // 0.28 -> 0.48s
+                startBonusRound(0.38); // 0.48 -> 0.38s
                 return;
             }
 
