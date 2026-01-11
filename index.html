@@ -29,6 +29,18 @@
         }
         .shake-screen { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
         
+        /* 불빛 힌트 애니메이션 (위치 이동 간섭 제거) */
+        @keyframes hint-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(255, 215, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0); }
+        }
+        .hint-active {
+            animation: hint-pulse 1s infinite;
+            z-index: 9999 !important;
+            filter: brightness(1.5) drop-shadow(0 0 10px gold) !important;
+        }
+
         /* 상단 HUD 바 */
         .hud-bar {
             height: 100px;
@@ -60,6 +72,24 @@
             cursor: crosshair;
             z-index: 0;
             overflow: hidden;
+        }
+
+        /* 울타리 스타일 */
+        .fence-line {
+            position: absolute;
+            background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PHBhdGggZD0iTTAgMEwyMCAyME0yMCAwTDAgMjAiIHN0cm9rZT0iIzVkNDAzNyIgc3Ryb2tlLXdpZHRoPSIyIi8+PC9zdmc+');
+            background-color: #795548;
+            border: 2px solid #3e2723;
+            z-index: 50;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+        }
+        .fence-horizontal {
+            top: 50%; left: 0; width: 100%; height: 16px;
+            transform: translateY(-50%);
+        }
+        .fence-vertical {
+            top: 0; left: 50%; width: 16px; height: 100%;
+            transform: translateX(-50%);
         }
 
         .hud-item { display: flex; flex-direction: column; align-items: center; }
@@ -255,29 +285,32 @@
         .card-title { font-weight: 900; font-size: 1rem; margin-bottom: 4px; line-height: 1.1; }
         .card-desc { font-size: 0.8rem; color: #6b7280; line-height: 1.2; word-break: keep-all; }
 
-        /* Active Benefits HUD */
+        /* Active Benefits HUD - 왼쪽 상단 */
         #active-benefits {
             position: fixed;
-            bottom: 20px;
-            left: 20px;
+            top: 110px;
+            left: 10px;
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 4px;
             z-index: 90;
             pointer-events: none;
+            align-items: flex-start;
         }
         .active-benefit-item {
-            background: rgba(0,0,0,0.6);
+            background: rgba(0,0,0,0.5);
             color: white;
-            padding: 5px 10px;
-            border-radius: 20px;
-            font-size: 0.85rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: bold;
             display: flex;
             align-items: center;
-            gap: 6px;
-            backdrop-filter: blur(4px);
-            border: 1px solid rgba(255,255,255,0.2);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            gap: 4px;
+            backdrop-filter: blur(2px);
+            border: 1px solid rgba(255,255,255,0.1);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
         }
 
         /* Bonus Layer */
@@ -346,10 +379,9 @@
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // 게임 밸런스 상수
         const SPEED_MIN_BASE = 0.3;
         const SPEED_MAX_BASE = 0.8;
-        const DEFAULT_TIMEOUT_LIMIT = 30.0; // 30초
+        const DEFAULT_TIMEOUT_LIMIT = 30.0;
 
         const gameArena = document.getElementById('game-arena');
         const bonusLayer = document.getElementById('bonus-layer');
@@ -370,13 +402,16 @@
         let timerInterval = null;
         let animId = null;
         let monsters = [];
+        let hintTimer = null; // 힌트 타이머
 
         // Benefit State
         let activeBenefits = {
             initialKill: 0,
             slowPercent: 0,
             timeExtension: 0,
-            bushRemoval: 0
+            bushRemoval: 0,
+            fenceLevel: 0,
+            lightLevel: 0
         };
 
         let app, db, auth;
@@ -390,7 +425,9 @@
             KILL: 'kill',
             SLOW: 'slow',
             TIME: 'time',
-            REMOVE_BUSH: 'remove_bush'
+            REMOVE_BUSH: 'remove_bush',
+            FENCE: 'fence',
+            LIGHT: 'light'
         };
 
         function getMonsterHTML(type, color, darkColor) {
@@ -422,7 +459,6 @@
             document.getElementById('start-button').onclick = startGame;
             document.getElementById('reset-button').onclick = resetGame;
             
-            // 초기 스테이지 설정 로드
             loadStageConfig(1);
             updateStatusDisplay();
             updateActiveBenefitsUI();
@@ -433,21 +469,13 @@
             
             if (stage === 1) { config.count = 10; config.speedBonus = 0; config.bushCount = 0; }
             else if (stage === 2) { config.count = 10; config.speedBonus = 0.3; config.bushCount = 0; }
-            // 3단계: 풀숲 3->1개로 감소
             else if (stage === 3) { config.count = 15; config.speedBonus = 0.3; config.bushCount = 1; }
-            // 4단계: 풀숲 3->1개로 감소
             else if (stage === 4) { config.count = 20; config.speedBonus = 0.6; config.bushCount = 1; }
-            // 5단계: 풀숲 4->2개로 감소
             else if (stage === 5) { config.count = 25; config.speedBonus = 0.6; config.bushCount = 2; }
-            // 6단계: 풀숲 4->2개로 감소
             else if (stage === 6) { config.count = 30; config.speedBonus = 0.6; config.bushCount = 2; }
-            // 7단계: 풀숲 4->2개로 감소
             else if (stage === 7) { config.count = 30; config.speedBonus = 0.7; config.bushCount = 2; }
-            // 8단계: 풀숲 5->3개로 감소
             else if (stage === 8) { config.count = 35; config.speedBonus = 0.7; config.bushCount = 3; }
-            // 9단계: 몬스터 5명 추가, 풀숲 3개 (5-2)
             else if (stage === 9) { config.count = 40; config.speedBonus = 0.7; config.bushCount = 3; }
-            // 10단계: 풀숲 1개 추가 -> 4개 (6-2)
             else if (stage === 10) { config.count = 40; config.speedBonus = 0.7; config.bushCount = 4; }
             else {
                 config.count = 40 + (stage - 10) * 5;
@@ -473,8 +501,8 @@
             isGameRunning = false;
             clearInterval(timerInterval);
             if (animId) { cancelAnimationFrame(animId); animId = null; }
+            if (hintTimer) { clearTimeout(hintTimer); hintTimer = null; }
             
-            // 모든 모달 닫기
             document.querySelectorAll('.fixed.z-\\[200\\]').forEach(el => el.remove());
             bonusLayer.style.display = 'none';
             bonusLayer.innerHTML = '';
@@ -482,8 +510,7 @@
             startScreen.style.display = 'flex';
             timerDisplay.textContent = '0.000';
             
-            // Reset Benefits
-            activeBenefits = { initialKill: 0, slowPercent: 0, timeExtension: 0, bushRemoval: 0 };
+            activeBenefits = { initialKill: 0, slowPercent: 0, timeExtension: 0, bushRemoval: 0, fenceLevel: 0, lightLevel: 0 };
             updateActiveBenefitsUI();
 
             loadStageConfig(1);
@@ -511,6 +538,19 @@
         function createMonsters() {
             gameArena.innerHTML = '';
             monsters = [];
+            
+            // 울타리 생성
+            if (activeBenefits.fenceLevel >= 1) {
+                const hFence = document.createElement('div');
+                hFence.className = 'fence-line fence-horizontal';
+                gameArena.appendChild(hFence);
+            }
+            if (activeBenefits.fenceLevel >= 2) {
+                const vFence = document.createElement('div');
+                vFence.className = 'fence-line fence-vertical';
+                gameArena.appendChild(vFence);
+            }
+
             const w = gameArena.clientWidth;
             const h = gameArena.clientHeight;
             const config = getStageConfig(currentStage);
@@ -523,8 +563,44 @@
                 el.dataset.number = i;
                 const type = MONSTER_TYPES[i % 4];
                 const colorSet = COLORS[i % COLORS.length];
-                const startX = Math.random() * (w - 70);
-                const startY = Math.random() * (h - 70);
+                
+                let startX, startY;
+                const padding = 50;
+
+                // 울타리 배치 로직
+                if (activeBenefits.fenceLevel === 1) {
+                    // 2분할 (위/아래)
+                    if (i <= config.count / 2) {
+                        // 위쪽 (0 ~ H/2)
+                        startX = Math.random() * (w - 70);
+                        startY = Math.random() * (h/2 - 70);
+                    } else {
+                        // 아래쪽 (H/2 ~ H)
+                        startX = Math.random() * (w - 70);
+                        startY = (h/2) + Math.random() * (h/2 - 70);
+                    }
+                } else if (activeBenefits.fenceLevel === 2) {
+                    // 4분할
+                    const q = Math.ceil(config.count / 4);
+                    if (i <= q) { // 좌상
+                        startX = Math.random() * (w/2 - 70);
+                        startY = Math.random() * (h/2 - 70);
+                    } else if (i <= q*2) { // 우상
+                        startX = (w/2) + Math.random() * (w/2 - 70);
+                        startY = Math.random() * (h/2 - 70);
+                    } else if (i <= q*3) { // 좌하
+                        startX = Math.random() * (w/2 - 70);
+                        startY = (h/2) + Math.random() * (h/2 - 70);
+                    } else { // 우하
+                        startX = (w/2) + Math.random() * (w/2 - 70);
+                        startY = (h/2) + Math.random() * (h/2 - 70);
+                    }
+                } else {
+                    // 기본 랜덤
+                    startX = Math.random() * (w - 70);
+                    startY = Math.random() * (h - 70);
+                }
+
                 const angle = Math.random() * Math.PI * 2;
                 
                 let baseSpeed = SPEED_MIN_BASE + Math.random() * (SPEED_MAX_BASE - SPEED_MIN_BASE);
@@ -547,7 +623,8 @@
                 monsters.push({ 
                     el, x: startX, y: startY, 
                     vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, 
-                    dead: isDeadStart 
+                    dead: isDeadStart,
+                    id: i
                 });
             }
 
@@ -558,12 +635,37 @@
                 }
             }
             updateStatusDisplay();
+            // resetHintTimer()는 startGame에서 호출
+        }
+
+        // --- Hint Logic ---
+        function resetHintTimer() {
+            if (hintTimer) clearTimeout(hintTimer);
+            
+            // 기존 힌트 제거
+            document.querySelectorAll('.hint-active').forEach(el => el.classList.remove('hint-active'));
+
+            // 게임이 실행 중이고, 불빛 레벨이 있을 때만 작동
+            if (activeBenefits.lightLevel > 0 && isGameRunning) {
+                let delay = 2000;
+                if (activeBenefits.lightLevel === 2) delay = 1500;
+                if (activeBenefits.lightLevel >= 3) delay = 1000;
+
+                hintTimer = setTimeout(() => {
+                    const targetMonster = monsters.find(m => m.id === currentTarget && !m.dead);
+                    if (targetMonster && targetMonster.el) {
+                        targetMonster.el.classList.add('hint-active');
+                    }
+                }, delay);
+            }
         }
 
         function startGame() {
             startScreen.style.display = 'none';
             createMonsters();
-            isGameRunning = true;
+            isGameRunning = true; 
+            resetHintTimer(); 
+            
             startTime = performance.now();
             
             const timeLimit = DEFAULT_TIMEOUT_LIMIT + activeBenefits.timeExtension;
@@ -581,6 +683,7 @@
             isGameRunning = false;
             clearInterval(timerInterval);
             if (animId) { cancelAnimationFrame(animId); animId = null; }
+            if (hintTimer) { clearTimeout(hintTimer); hintTimer = null; }
             
             const modal = document.createElement('div');
             modal.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur pointer-events-auto';
@@ -609,8 +712,10 @@
                 monsters.forEach(m => {
                     if(m.dead) return;
                     m.x += m.vx; m.y += m.vy;
+                    
                     if(m.x <= 0 || m.x >= w - 64) m.vx *= -1;
                     if(m.y <= 0 || m.y >= h - 64) m.vy *= -1;
+                    
                     m.el.style.transform = `translate(${m.x}px, ${m.y}px)`;
                     m.el.style.zIndex = Math.floor(m.y);
                     const body = m.el.querySelector('.monster-body');
@@ -632,7 +737,10 @@
             if(num === currentTarget) {
                 m.dead = true;
                 el.classList.add('dead');
+                el.classList.remove('hint-active'); 
                 currentTarget++;
+                resetHintTimer(); 
+
                 if(currentTarget > totalMonstersInStage) handleStageClear();
                 else updateStatusDisplay();
             } else {
@@ -651,7 +759,6 @@
             bonusLayer.innerHTML = '';
             bonusLayer.style.display = 'flex';
             
-            // 안내 문구
             const intro = document.createElement('div');
             intro.className = 'start-panel';
             intro.innerHTML = `
@@ -665,7 +772,6 @@
             document.getElementById('bonus-ready-btn').onclick = () => {
                 intro.remove();
                 
-                // 랜덤 대기 후 몬스터 출현
                 const waitTime = 1000 + Math.random() * 2000;
                 setTimeout(() => {
                     spawnGiantMonster(limitTime);
@@ -678,7 +784,6 @@
             monster.className = 'monster-entity giant-monster';
             monster.innerHTML = getMonsterHTML('slime', '#ff0000', '#990000');
             
-            // 랜덤 위치
             const w = window.innerWidth;
             const h = window.innerHeight;
             const x = Math.random() * (w - 250) + 25;
@@ -700,10 +805,8 @@
                 monster.remove();
                 
                 if (duration <= limitTime) {
-                    // 성공: 베네핏 2개
                     showBonusResult(true, duration, 2);
                 } else {
-                    // 실패: 베네핏 1개
                     showBonusResult(false, duration, 1);
                 }
             };
@@ -772,7 +875,7 @@
                                 updateStatusDisplay();
                                 startGame();
                             } else {
-                                updateUI(); // Re-render for next pick
+                                updateUI();
                             }
                         };
                     }
@@ -786,7 +889,12 @@
         function generateBenefits() {
             const nextStageConfig = getStageConfig(currentStage + 1);
             let availableTypes = [BENEFIT_TYPES.KILL, BENEFIT_TYPES.SLOW, BENEFIT_TYPES.TIME];
-            if (nextStageConfig.bushCount > 0) availableTypes.push(BENEFIT_TYPES.REMOVE_BUSH);
+            
+            if (currentStage >= 3) {
+                if (nextStageConfig.bushCount > 0) availableTypes.push(BENEFIT_TYPES.REMOVE_BUSH);
+                if (activeBenefits.fenceLevel < 2) availableTypes.push(BENEFIT_TYPES.FENCE);
+                if (activeBenefits.lightLevel < 3) availableTypes.push(BENEFIT_TYPES.LIGHT);
+            }
 
             for (let i = availableTypes.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
@@ -800,6 +908,12 @@
                 let rarity, value, title, desc, icon, cssClass;
                 if (type === BENEFIT_TYPES.REMOVE_BUSH) {
                     rarity = 'rare'; value = 1; cssClass = 'rarity-rare'; title = "제초 작업"; desc = "다음부터 풀숲 1개 제거"; icon = "✂️";
+                } else if (type === BENEFIT_TYPES.FENCE) {
+                    rarity = 'legend'; value = 1; cssClass = 'rarity-legend'; title = "울타리 설치"; desc = "몬스터를 구역별로 정렬"; icon = "🚧";
+                } else if (type === BENEFIT_TYPES.LIGHT) {
+                    rarity = 'rare'; value = 1; cssClass = 'rarity-rare'; title = "불빛 힌트"; 
+                    const sec = activeBenefits.lightLevel === 0 ? 2 : (activeBenefits.lightLevel === 1 ? 1.5 : 1);
+                    desc = `${sec}초 지연 시 힌트 표시`; icon = "💡";
                 } else {
                     const randRarity = Math.random();
                     if (type === BENEFIT_TYPES.KILL) {
@@ -829,26 +943,30 @@
             if (benefit.type === BENEFIT_TYPES.SLOW) activeBenefits.slowPercent += benefit.value;
             if (benefit.type === BENEFIT_TYPES.TIME) activeBenefits.timeExtension += benefit.value;
             if (benefit.type === BENEFIT_TYPES.REMOVE_BUSH) activeBenefits.bushRemoval += benefit.value;
+            if (benefit.type === BENEFIT_TYPES.FENCE) activeBenefits.fenceLevel += 1;
+            if (benefit.type === BENEFIT_TYPES.LIGHT) activeBenefits.lightLevel += 1;
             updateActiveBenefitsUI();
         }
 
         function updateActiveBenefitsUI() {
             activeBenefitsEl.innerHTML = '';
-            if (activeBenefits.initialKill > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>⚔️</span><span>시작킬 +${activeBenefits.initialKill}</span></div>`;
-            if (activeBenefits.slowPercent > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>🐌</span><span>속도 -${activeBenefits.slowPercent}%</span></div>`;
-            if (activeBenefits.timeExtension > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>⏳</span><span>시간 +${activeBenefits.timeExtension}초</span></div>`;
-            if (activeBenefits.bushRemoval > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>✂️</span><span>풀숲제거 -${activeBenefits.bushRemoval}</span></div>`;
+            if (activeBenefits.initialKill > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>⚔️</span><span>${activeBenefits.initialKill}</span></div>`;
+            if (activeBenefits.slowPercent > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>🐌</span><span>-${activeBenefits.slowPercent}%</span></div>`;
+            if (activeBenefits.timeExtension > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>⏳</span><span>+${activeBenefits.timeExtension}s</span></div>`;
+            if (activeBenefits.bushRemoval > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>✂️</span><span>-${activeBenefits.bushRemoval}</span></div>`;
+            if (activeBenefits.fenceLevel > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>🚧</span><span>Lv.${activeBenefits.fenceLevel}</span></div>`;
+            if (activeBenefits.lightLevel > 0) activeBenefitsEl.innerHTML += `<div class="active-benefit-item"><span>💡</span><span>Lv.${activeBenefits.lightLevel}</span></div>`;
         }
 
         async function handleStageClear() {
             isGameRunning = false;
             clearInterval(timerInterval);
             if (animId) { cancelAnimationFrame(animId); animId = null; }
+            if (hintTimer) { clearTimeout(hintTimer); hintTimer = null; }
 
             const score = timerDisplay.textContent;
             if(db) await addDoc(collection(db, COLLECTION_PATH), { stage: currentStage, time: parseFloat(score), timestamp: serverTimestamp() });
 
-            // 보너스 라운드 체크 (반응속도 0.2초씩 완화)
             if (currentStage === 3) {
                 startBonusRound(0.6); // 0.4 -> 0.6s
                 return;
@@ -862,7 +980,6 @@
                 return;
             }
 
-            // 일반 스테이지 클리어
             showBenefitModal(1);
         }
 
